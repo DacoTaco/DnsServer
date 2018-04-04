@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<DNSEntries>
+	<DNSEntry comment="old 3DS youtube exploit" hostname="m.youtube.com" ip="107.211.140.65" enabled="true"/>
+	<DNSEntry comment="DNS test" hostname="www.bing.com" ip="64.15.124.246" enabled="true"/>
+	<DNSEntry comment="PSOGC : server redirect" hostname="pso-gc1.pso.playsega.com" ip="10.3.42.200" enabled="true"/>
+	<DNSEntry comment="3DS : version host" hostname="tagaya-ctr.cdn.nintendo.net" ip="127.0.0.1" enabled="true"/>
+	<DNSEntry comment="3DS : checks for an update (important!)" hostname="nus.c.shop.nintendowifi.net" ip="127.0.0.1" enabled="true"/>
+	<DNSEntry comment="3DS : hosts the update content (important!)" hostname="nus.cdn.c.shop.nintendowifi.net" ip="127.0.0.1" enabled="true"/>
+	<DNSEntry comment="3DS : seems to be significant too (according to Yifan Lu)" hostname="ecs.c.shop.nintendowifi.net" ip="127.0.0.1" enabled="true"/>
+	<DNSEntry comment="3DS : blocks eShop authentication(might as well block that too)" hostname="cp3s-auth.c.shop.nintendowifi.net" ip="127.0.0.1" enabled="true"/>
+	<DNSEntry comment="SWITCH : block switch update" hostname="sun.hac.lp1.d4c.nintendo.net" ip="127.0.0.1" enabled="true"/>
+	<DNSEntry comment="SWITCH : PHONE HOME (to report failures)" hostname="receive-lp1.dg.srv.nintendo.net" ip="127.0.0.1" enabled="true"/>
+	<DNSEntry comment="SWITCH : PHONE HOME v2 (to report failures)" hostname="receive-lp1.er.srv.nintendo.net" ip="127.0.0.1" enabled="true"/>
+	<DNSEntry comment="SWITCH : Update Server" hostname="beach.hac.lp1.eshop.nintendo.net" ip="127.0.0.1" enabled="true"/>
+	<DNSEntry comment="SWITCH : Update Server 2" hostname="atumn.hac.lp1.d4c.nintendo.net" ip="127.0.0.1" enabled="true"/>
+</DNSEntries>
