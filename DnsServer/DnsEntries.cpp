@@ -95,56 +95,6 @@ int GetDnsEntries(void)
 
 	bReloadEntries = true;
 	return DNS_Entries.size();
-
-
-
-	/*
-	//OLD AF LINE BY LINE READING
-	std::ifstream file("entries.txt");
-	std::string stream;
-	DNS_Entry temp;
-	while(std::getline(file,stream))
-	{
-		memset(&temp,0,sizeof(DNS_Entry));
-		if (memcmp(stream.c_str(),"host=",5) == 0)
-		{
-			temp.Hostname = stream.substr(5,stream.npos);
-			if(std::getline(file,stream) && memcmp(stream.c_str(),"ip=",3) == 0)
-			{
-				std::string sIP = stream.substr(3,stream.npos);
-				unsigned int IP = 0;
-				temp.IP = inet_addr(sIP.c_str());
-				//fucking endians...
-				IP = temp.IP;
-				if ( htonl(47) != 47 ) {
-				  // Little endian. FML
-					IP = _byteswap_ulong(temp.IP);
-				}
-				std::streamoff fLoc = file.tellg();
-				std::getline(file,stream);
-				if (memcmp(stream.c_str(),"comment=",5) == 0)
-				{
-					temp.comment = stream.substr(8,stream.npos);
-				}
-				else
-				{
-					//there is no comment, rewind a line
-					file.seekg(fLoc);
-				}
-				DNS_Entries.push_back(temp);
-			}
-			else
-			{
-				break;
-			}
-		}
-		else
-		{
-			break;
-		}
-	}
-	bReloadEntries = true;
-	return DNS_Entries.size();*/
 }
 void Dns_Cleanup()
 {
