@@ -15,6 +15,7 @@
 #include "stdafx.h"
 
 #include "DnsEntries.h"
+#include "DnsPacket.h"
 #include "Console.h"
 
 //DEFINES
@@ -157,7 +158,7 @@ int _tmain(int argc, _TCHAR* argv[])
         //print details of the client/peer and the data received		
 		char ip_address_str[INET6_ADDRSTRLEN];
 		unsigned char ip_address[16];
-		char ip_found = 0;
+		DnsResponseCodes responseCode = DnsResponseCodes::NameError;
 		printf_colour(TEXT_WHITE, "Received packet from %s:%d (0x%04X)\n", inet_ntop(AF_INET, &si_other.sin_addr, ip_address_str, sizeof(ip_address_str)), ntohs(si_other.sin_port), recv_len);
 		DisplayPacket(buf,recv_len);
 		printf("\n");
@@ -165,22 +166,15 @@ int _tmain(int argc, _TCHAR* argv[])
 		//check if we need to reload entries before awnsering
 		LoadEntries();
 
-		if(buf[2] == 1 && buf[5] == 1)
+		DnsPacket dnsPacket;
+		dnsPacket.Parse(buf, recv_len);
+
+		if(!dnsPacket.IsResponse() && dnsPacket.RequestCount() > 0)
 		{
 			char hostname[1024];
-			memset(hostname,0,1024);
-			int pos = 0x0C;
-			for(int i = 0;i<1024;i++)//= &buf[13];
-			{
-				if(i != 0)
-					sprintf(hostname,"%s.", hostname);
-				strncpy((char*)&hostname[strlen(hostname)],(char*)&buf[pos+1],buf[pos]);
-				
-				pos += 1 + buf[pos];
-				if(pos >= recv_len - 5)
-					break;
-			}
-			printf_colour(TEXT_WHITE, "dealing with DNS question for : %s\n", hostname);
+			memset(hostname, 0, 1024);
+			dnsPacket.Hostname(hostname, 1024);
+			printf_colour(TEXT_WHITE, "dealing with DNS question for : '%s'\n", hostname);
 			memset(ip_address_str, 0, INET6_ADDRSTRLEN);
 			memset(ip_address, 0, sizeof(ip_address));
 
@@ -194,7 +188,7 @@ int _tmain(int argc, _TCHAR* argv[])
 				DNS_Entry entry = (DNS_Entry)(*it);
 				printf_colour(TEXT_GREEN, "%s detected! redirecting...\n", entry.Hostname.c_str());
 				memcpy(ip_address, entry.IP, sizeof(entry.IP));
-				ip_found = 1;
+				responseCode = DnsResponseCodes::NoError;
 			}
 			else //resolve hostname if we didn't have it in our settings.
 			{
@@ -207,79 +201,63 @@ int _tmain(int argc, _TCHAR* argv[])
 				hints.ai_socktype = SOCK_STREAM; // TCP stream sockets
 				hints.ai_flags = AI_PASSIVE;     // fill in my IP for me
 
-				if ((status = getaddrinfo(hostname, NULL, &hints, &hostname_info)) != 0)
+				if ((status = getaddrinfo(hostname, NULL, &hints, &hostname_info)) != 0 && status != 11001)
 				{
 					printf_colour(TEXT_RED, "getaddrinfo error: %s(%d)\n", strerror(status), status);
-					exit_app(EXIT_FAILURE);
+					responseCode = DnsResponseCodes::ServerError;
 				}
-
-				printf_colour(TEXT_NORMAL, "IP addresses for %s:\n", hostname);
-				char ip[INET6_ADDRSTRLEN];
-				memset(ip, 0, INET6_ADDRSTRLEN);
-
-				for (addrinfo* p = hostname_info; p != NULL; p = p->ai_next) 
+				else
 				{
-					void* addr;
-					char* ipver;					
-					if (p->ai_family == AF_INET) //IPv4
+					printf_colour(TEXT_NORMAL, "IP addresses for %s:\n", hostname);
+					char ip[INET6_ADDRSTRLEN];
+					memset(ip, 0, INET6_ADDRSTRLEN);
+
+					for (addrinfo* p = hostname_info; p != NULL; p = p->ai_next)
 					{
-						struct sockaddr_in* ipv4 = (struct sockaddr_in*)p->ai_addr;
-						addr = &(ipv4->sin_addr);
-						ipver = "IPv4";
-						if (!ip_found)
+						void* addr;
+						char* ipver;
+						if (p->ai_family == AF_INET) //IPv4
 						{
-							memcpy(ip_address, addr, sizeof(4));
-							ip_found = 1;
+							struct sockaddr_in* ipv4 = (struct sockaddr_in*)p->ai_addr;
+							addr = &(ipv4->sin_addr);
+							ipver = "IPv4";
+							if (responseCode != DnsResponseCodes::NoError)
+							{
+								memcpy(ip_address, addr, sizeof(4));
+								responseCode = DnsResponseCodes::NoError;
+							}
 						}
-					}
-					else //IPv6
-					{
-						struct sockaddr_in6* ipv6 = (struct sockaddr_in6*)p->ai_addr;
-						addr = &(ipv6->sin6_addr);
-						ipver = "IPv6";
-					}
+						else //IPv6
+						{
+							struct sockaddr_in6* ipv6 = (struct sockaddr_in6*)p->ai_addr;
+							addr = &(ipv6->sin6_addr);
+							ipver = "IPv6";
+						}
 
-					// convert the IP to a string and print it:
-					inet_ntop(p->ai_family, addr, ip, sizeof ip);
-					printf_colour(TEXT_NORMAL, "\t%s: %s\n", ipver, ip);
+						// convert the IP to a string and print it:
+						inet_ntop(p->ai_family, addr, ip, sizeof ip);
+						printf_colour(TEXT_NORMAL, "\t%s: %s\n", ipver, ip);
+					}
+					freeaddrinfo(hostname_info);
 				}
-
-				if (!ip_found)
-				{
-					printf_colour(TEXT_RED, "%s is unavailable\n", hostname);
-					printf_colour(TEXT_RED, "TODO : implement DNS not found\n");
-				}
-				
-				freeaddrinfo(hostname_info);
 			}
 
-			if (!ip_found)
-				printf_colour(TEXT_RED, "IP not found. Sending all zeroes.");
+			//Reply to DNS Request			
+			if (responseCode != DnsResponseCodes::NoError)
+			{
+				printf_colour(TEXT_RED, "%s is unavailable\n", hostname);
+				printf_colour(TEXT_RED, "IP not found. Sending error.\n");
+				dnsPacket.SetError(responseCode);
+			}
+			else
+			{
+				inet_ntop(AF_INET, ip_address, ip_address_str, INET6_ADDRSTRLEN);
+				printf_colour(TEXT_WHITE, "replying : %s (%02X.%02X.%02X.%02X)\n", ip_address_str, ip_address[0], ip_address[1], ip_address[2], ip_address[3]);
+				dnsPacket.AddResponse(ip_address, 4); 
+			}
 
-			inet_ntop(AF_INET, ip_address, ip_address_str, INET6_ADDRSTRLEN);
-			printf_colour(TEXT_WHITE, "replying : %s (%02X.%02X.%02X.%02X)\n", ip_address_str, ip_address[0], ip_address[1], ip_address[2], ip_address[3]);
-				
-			//send reply
 			unsigned char reply[2048];
-			int send_len = recv_len + 0x10;
-			memset(reply,0,2048);
-			memcpy(reply, buf, recv_len);
-			//now to change the reply and add the IP...
-			reply[2] = 0x81;
-			reply[3] = 0x80;
-			reply[7] = 0x01;
-
-			//append reply command
-			memcpy((char*)&reply[recv_len],"\xC0\x0C",0x2);
-			//append type and class which we copy from the request
-			memcpy((char*)&reply[recv_len+2],(char*)&reply[recv_len-4],0x4);
-			//append TTL. just making up number here XD
-			memset((char*)&reply[recv_len+9],0x08,0x01);
-			//append data lenght. this is a IPv4 ip so 4 bytes
-			memset((char*)&reply[recv_len+11],0x04,0x01);
-			//append IP
-			memcpy((char*)&reply[recv_len+12], ip_address, 0x04);
-
+			int send_len = dnsPacket.Build(reply, sizeof(reply));
 			printf("sending packet to %s:%d (0x%04X)\n", ip_address_str, ntohs(si_other.sin_port),send_len);
 			DisplayPacket(reply,send_len);
 			if (sendto(s, (char*)reply, send_len, 0, (struct sockaddr*) &si_other, slen) == SOCKET_ERROR)
