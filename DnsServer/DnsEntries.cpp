@@ -20,6 +20,7 @@
 
 #include <windows.h>
 #include <tchar.h>
+#include <Ws2tcpip.h>
 
 typedef DWORD ulong;
 typedef WORD ushort;
@@ -67,15 +68,9 @@ int GetDnsEntries(void)
 			DNS_Entry temp;
 			temp.Hostname = node->first_attribute("hostname")->value();
 			temp.comment = node->first_attribute("comment")->value();
-			unsigned int IP = 0;
-				IP = inet_addr(node->first_attribute("ip")->value());
-				//fucking endians...
-				//for some odd reason in XML parsing we wont need the endian switching?!
-				/*if ( htonl(47) != 47 ) {
-				  // Little endian. FML
-					IP = _byteswap_ulong(IP);
-				}*/
-				temp.IP = IP;
+			char IP[4] = {0};
+			inet_pton(AF_INET, node->first_attribute("ip")->value(), &IP);
+			memcpy(temp.IP, IP, sizeof(IP));
 			string test = node->first_attribute("enabled")->value();
 			if(strncmp(node->first_attribute("enabled")->value(),"true",4) == 0)
 				temp.enabled = true;

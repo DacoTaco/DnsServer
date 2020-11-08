@@ -11,9 +11,9 @@
 #include <vector>
 #include <string>
 #include <fstream>
-//#include <windows.h>
 
 #include "stdafx.h"
+
 #include "DnsEntries.h"
 #include "Console.h"
 
@@ -21,14 +21,19 @@
 //--------------
 #define PORT 53
 
-
-
 //VARIABLES
 //--------------
 SOCKET s;
 
 //FUNCTIONS
 //--------------
+
+unsigned int ToBigEndian(unsigned int value)
+{
+	if (htonl(47) != 47)
+		return _byteswap_ulong(value);
+	return value;
+}
 
 int LoadEntries()
 {
@@ -39,20 +44,7 @@ int LoadEntries()
 		{
 			for (unsigned int i = 0; i < DNS_Entries.size(); i++)
 			{
-				unsigned int IP = DNS_Entries[i].IP;
-
-				if ( htonl(47) != 47 ) 
-				{
-					// Little endian. FML
-					IP = _byteswap_ulong(DNS_Entries[i].IP);
-				}
-
-				unsigned char ip_hex[4] = {
-									(IP & 0xFF000000) >> 24,
-									(IP & 0xFF0000) >> 16,
-									(IP & 0xFF00) >> 8,
-									(IP & 0xFF)
-				};
+				unsigned char* ip_hex = DNS_Entries[i].IP;
 			
 				printf_colour(TEXT_YELLOW,"\tHostname = %s\n",DNS_Entries[i].Hostname.c_str());
 				printf_colour(TEXT_CYAN,"\tIP = %d.%d.%d.%d - %02X.%02X.%02X.%02X\n",ip_hex[0],ip_hex[1],ip_hex[2],ip_hex[3],ip_hex[0],ip_hex[1],ip_hex[2],ip_hex[3]);
@@ -145,12 +137,8 @@ int _tmain(int argc, _TCHAR* argv[])
 	//load the entries.txt
 	InitDNSWatcher();
 	LoadEntries();
-	
 
 	//keep listening for data
-	/*_getch();
-	exit_app(0);*/
-
 	printf("Waiting for data...\n");
     while(1)
     {
@@ -166,100 +154,141 @@ int _tmain(int argc, _TCHAR* argv[])
             exit_app(EXIT_FAILURE);
         }
          
-        //print details of the client/peer and the data received
-        printf("Received packet from %s:%d (0x%04X)\n", inet_ntoa(si_other.sin_addr), ntohs(si_other.sin_port),recv_len);
+        //print details of the client/peer and the data received		
+		char ip_address_str[INET6_ADDRSTRLEN];
+		unsigned char ip_address[16];
+		char ip_found = 0;
+		printf_colour(TEXT_WHITE, "Received packet from %s:%d (0x%04X)\n", inet_ntop(AF_INET, &si_other.sin_addr, ip_address_str, sizeof(ip_address_str)), ntohs(si_other.sin_port), recv_len);
 		DisplayPacket(buf,recv_len);
+		printf("\n");
 
 		//check if we need to reload entries before awnsering
 		LoadEntries();
 
 		if(buf[2] == 1 && buf[5] == 1)
 		{
-			char str[1024];
-			memset(str,0,1024);
+			char hostname[1024];
+			memset(hostname,0,1024);
 			int pos = 0x0C;
 			for(int i = 0;i<1024;i++)//= &buf[13];
 			{
 				if(i != 0)
-					sprintf(str,"%s.",str);
-				strncpy((char*)&str[strlen(str)],(char*)&buf[pos+1],buf[pos]);
+					sprintf(hostname,"%s.", hostname);
+				strncpy((char*)&hostname[strlen(hostname)],(char*)&buf[pos+1],buf[pos]);
 				
-				//printf("hostname part #%d : %x - %x - %s\n",i,buf[pos],pos,str);
 				pos += 1 + buf[pos];
 				if(pos >= recv_len - 5)
-				{
-					//printf("end of DNS packet\n");
-					//str[strlen(str)-1] = 0x00;
 					break;
-				}
 			}
-			printf("dealing with DNS question for : %s\n",str);
-			hostent * hostname = gethostbyname(str);
-			if(hostname == NULL)
+			printf_colour(TEXT_WHITE, "dealing with DNS question for : %s\n", hostname);
+			memset(ip_address_str, 0, INET6_ADDRSTRLEN);
+			memset(ip_address, 0, sizeof(ip_address));
+
+			//look through our settings
+			auto it = std::find_if(DNS_Entries.begin(), DNS_Entries.end(), [&](const DNS_Entry& obj) 
+				{
+					return strncmp(obj.Hostname.c_str(), hostname, strlen(hostname)) == 0;
+				});
+			if (it != DNS_Entries.end())
 			{
-				printf_colour(TEXT_RED,"%s is unavailable\n", str);
-				printf_colour(TEXT_RED,"TODO : implement DNS not found\n");
+				DNS_Entry entry = (DNS_Entry)(*it);
+				printf_colour(TEXT_GREEN, "%s detected! redirecting...\n", entry.Hostname.c_str());
+				memcpy(ip_address, entry.IP, sizeof(entry.IP));
+				ip_found = 1;
 			}
-			else
+			else //resolve hostname if we didn't have it in our settings.
 			{
-				in_addr * address = NULL;
-				for(unsigned int i = 0;i < DNS_Entries.size();i++)
-				{
-					if(strncmp(DNS_Entries[i].Hostname.c_str(),str,strlen(str)) == 0)
-					{
-						printf_colour(TEXT_GREEN,"%s detected! redirecting...\n",DNS_Entries[i].Hostname.c_str());
-						address = (in_addr*)&DNS_Entries[i].IP;
-						break;
-					}
-				}
-				if(address == NULL)
-				{
-					address = (in_addr * )hostname->h_addr;
-				}
-				char ip_address[100];
-				memset(ip_address,0,100);
-				strncpy(ip_address,inet_ntoa(* address),100);
-				//ip_address = inet_ntoa(* address);
-				unsigned int IP = inet_addr(ip_address);
-				//fucking endians...
-				if ( htonl(47) != 47 ) {
-				  // Little endian. FML
-					IP = _byteswap_ulong(IP);
-				}
-				printf("IP : %s (%02X.%02X.%02X.%02X)\n",ip_address,(IP & 0xFF000000) >> 24,(IP & 0xFF0000) >> 16,(IP & 0xFF00) >> 8,(IP & 0xFF));
-				
-				//send reply
-				unsigned char reply[1024];
-				int send_len = recv_len + 0x10;
-				memset(reply,0,1024);
-				memcpy(reply,buf,recv_len);
-				//now to change the reply and add the IP...
-				reply[2] = 0x81;
-				reply[3] = 0x80;
-				reply[7] = 0x01;
+				int status;
+				struct addrinfo hints;
+				struct addrinfo* hostname_info;  // will point to the results
 
-				//append reply command
-				memcpy((char*)&reply[recv_len],"\xC0\x0C",0x2);
-				//append type and class which we copy from the request
-				memcpy((char*)&reply[recv_len+2],(char*)&reply[recv_len-4],0x4);
-				//append TTL. just making up number here XD
-				memset((char*)&reply[recv_len+9],0x08,0x01);
-				//append data lenght. this is a IPv4 ip so 4 bytes
-				memset((char*)&reply[recv_len+11],0x04,0x01);
-				//append IP
-				memcpy((char*)&reply[recv_len+12],address,0x04);
+				memset(&hints, 0, sizeof hints); // make sure the struct is empty
+				hints.ai_family = AF_INET;     // don't care IPv4 or IPv6
+				hints.ai_socktype = SOCK_STREAM; // TCP stream sockets
+				hints.ai_flags = AI_PASSIVE;     // fill in my IP for me
 
-				printf("sending packet to %s:%d (0x%04X)\n", inet_ntoa(si_other.sin_addr), ntohs(si_other.sin_port),send_len);
-				DisplayPacket(reply,send_len);
-				if (sendto(s, (char*)reply, send_len, 0, (struct sockaddr*) &si_other, slen) == SOCKET_ERROR)
+				if ((status = getaddrinfo(hostname, NULL, &hints, &hostname_info)) != 0)
 				{
-					printf("sendto() failed with error code : %d" , WSAGetLastError());
+					printf_colour(TEXT_RED, "getaddrinfo error: %s(%d)\n", strerror(status), status);
 					exit_app(EXIT_FAILURE);
 				}
 
+				printf_colour(TEXT_NORMAL, "IP addresses for %s:\n", hostname);
+				char ip[INET6_ADDRSTRLEN];
+				memset(ip, 0, INET6_ADDRSTRLEN);
+
+				for (addrinfo* p = hostname_info; p != NULL; p = p->ai_next) 
+				{
+					void* addr;
+					char* ipver;					
+					if (p->ai_family == AF_INET) //IPv4
+					{
+						struct sockaddr_in* ipv4 = (struct sockaddr_in*)p->ai_addr;
+						addr = &(ipv4->sin_addr);
+						ipver = "IPv4";
+						if (!ip_found)
+						{
+							memcpy(ip_address, addr, sizeof(4));
+							ip_found = 1;
+						}
+					}
+					else //IPv6
+					{
+						struct sockaddr_in6* ipv6 = (struct sockaddr_in6*)p->ai_addr;
+						addr = &(ipv6->sin6_addr);
+						ipver = "IPv6";
+					}
+
+					// convert the IP to a string and print it:
+					inet_ntop(p->ai_family, addr, ip, sizeof ip);
+					printf_colour(TEXT_NORMAL, "\t%s: %s\n", ipver, ip);
+				}
+
+				if (!ip_found)
+				{
+					printf_colour(TEXT_RED, "%s is unavailable\n", hostname);
+					printf_colour(TEXT_RED, "TODO : implement DNS not found\n");
+				}
+				
+				freeaddrinfo(hostname_info);
+			}
+
+			if (!ip_found)
+				printf_colour(TEXT_RED, "IP not found. Sending all zeroes.");
+
+			inet_ntop(AF_INET, ip_address, ip_address_str, INET6_ADDRSTRLEN);
+			printf_colour(TEXT_WHITE, "replying : %s (%02X.%02X.%02X.%02X)\n", ip_address_str, ip_address[0], ip_address[1], ip_address[2], ip_address[3]);
+				
+			//send reply
+			unsigned char reply[2048];
+			int send_len = recv_len + 0x10;
+			memset(reply,0,2048);
+			memcpy(reply, buf, recv_len);
+			//now to change the reply and add the IP...
+			reply[2] = 0x81;
+			reply[3] = 0x80;
+			reply[7] = 0x01;
+
+			//append reply command
+			memcpy((char*)&reply[recv_len],"\xC0\x0C",0x2);
+			//append type and class which we copy from the request
+			memcpy((char*)&reply[recv_len+2],(char*)&reply[recv_len-4],0x4);
+			//append TTL. just making up number here XD
+			memset((char*)&reply[recv_len+9],0x08,0x01);
+			//append data lenght. this is a IPv4 ip so 4 bytes
+			memset((char*)&reply[recv_len+11],0x04,0x01);
+			//append IP
+			memcpy((char*)&reply[recv_len+12], ip_address, 0x04);
+
+			printf("sending packet to %s:%d (0x%04X)\n", ip_address_str, ntohs(si_other.sin_port),send_len);
+			DisplayPacket(reply,send_len);
+			if (sendto(s, (char*)reply, send_len, 0, (struct sockaddr*) &si_other, slen) == SOCKET_ERROR)
+			{
+				printf("sendto() failed with error code : %d" , WSAGetLastError());
+				exit_app(EXIT_FAILURE);
 			}
 		}
-		printf("\n\n");
+		printf("\n");
     }
 	exit_app(0);
 	return 0;

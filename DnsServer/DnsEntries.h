@@ -9,7 +9,7 @@
 //--------------
 struct DNS_Entry
 {
-	unsigned int IP;
+	unsigned char IP[4];
 	std::string Hostname;
 	std::string comment;
 	bool enabled;
