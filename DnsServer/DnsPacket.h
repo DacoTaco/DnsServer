@@ -25,7 +25,7 @@ typedef struct DnsPacket
 	}
 
 public:
-	int Parse(unsigned char* buf, int len)
+	int Parse(unsigned char* buf, uint32_t len)
 	{
 		if (buf == NULL || len == 0 || len < 20)
 			return -1;
@@ -140,7 +140,7 @@ public:
 		return (int)IsResponse();
 	}
 
-	int Build(unsigned char* buf, int len)
+	int Build(unsigned char* buf, uint32_t len)
 	{
 		if (buf == NULL || len == 0 || len < _data_length || _data == NULL || _data_length == 0)
 			return -1;
@@ -150,6 +150,7 @@ public:
 	}
 
 	const uint16_t ID() const { return (_data[0] << 8) + _data[1]; }
+	const uint32_t Size() const { return _data_length; }
 
 	const char IsResponse() const { return (_data[2] & 0b10000000) > 0; }
 	const void IsResponse(char isResponse) const { _data[2] = ((_data[2] & 0b01111111) | (isResponse > 0 ? 0b10000000 : 0)); }
@@ -171,14 +172,14 @@ public:
 	const uint16_t AdditionalRecordsCount() const { return (_data[0x0A] << 8) + _data[0x0B]; }
 	const void AdditionalRecordsCount(uint16_t cnt) const { _data[0x0A] = (cnt & 0xFF00) >> 8; _data[0x0B] = cnt & 0xFF; }
 
-	const int Hostname(char* dst, int maxCnt)
+	const int Hostname(char* dst, uint32_t maxCnt)
 	{
 		if (_hostname_length <= 0 || maxCnt <= _hostname_length)
 			return -1;
 
 		char* ptr = (char*)(_data + 0x0C);
-		int pos = 0;
-		int str_len = ptr[0];
+		uint32_t pos = 0;
+		uint32_t str_len = ptr[0];
 		ptr++;
 		while (ptr != 0x00 && str_len != 0x00 && pos + str_len <= _hostname_length)
 		{
@@ -205,8 +206,8 @@ public:
 	const uint16_t RequestType() const { return (_data[0x0C + _hostname_length + 1] << 8) + _data[0x0D + _hostname_length + 1]; }
 	const uint16_t RequestClass() const { return (_data[0x0E + _hostname_length + 1] << 8) + _data[0x0F + _hostname_length + 1]; }
 private:
-	int _data_length = 0;
-	int _hostname_length = 0;
+	uint32_t _data_length = 0;
+	uint32_t _hostname_length = 0;
 	unsigned char* _data = NULL;
 
 } DnsPacket;
