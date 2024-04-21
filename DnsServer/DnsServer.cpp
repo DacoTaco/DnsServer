@@ -24,7 +24,7 @@
 
 //VARIABLES
 //--------------
-SOCKET s;
+SOCKET AppSocket;
 
 //FUNCTIONS
 //--------------
@@ -82,7 +82,7 @@ std::string ws2s(const std::wstring& wstr)
 void exit_app(int exit_code)
 {
 	Dns_Cleanup();
-    closesocket(s);
+    closesocket(AppSocket);
 	KillConsole();
     WSACleanup();
 	exit(exit_code);
@@ -116,18 +116,25 @@ int _tmain(int argc, _TCHAR* argv[])
     }
      
     //Create a socket
-    if((s = socket(AF_INET , SOCK_DGRAM , 0 )) == INVALID_SOCKET)
+    if((AppSocket = socket(AF_INET , SOCK_DGRAM , 0 )) == INVALID_SOCKET)
     {
         printf_colour(TEXT_RED,"Could not create socket : %d" , WSAGetLastError());
     }
 
-	//Prepare the sockaddr_in structure
-    server.sin_family =  AF_INET;     // don't care IPv4 or IPv6 //AF_INET;
+	//Prepare the sockaddr_in structure.
+	//somehow, windows requires me to set the reuse flag now so...
+	char optionValue = TRUE;
+	if (setsockopt(AppSocket, SOL_SOCKET, SO_REUSEADDR, &optionValue, sizeof(BOOL)) == SOCKET_ERROR)
+	{
+		printf_colour(TEXT_RED, "Failed to set socket options: %d", WSAGetLastError());
+	}
+
+    server.sin_family = AF_INET;     // don't care IPv4 or IPv6 //AF_INET;
     server.sin_addr.s_addr = INADDR_ANY;
     server.sin_port = htons( PORT );
 
 	//Bind
-    if( bind(s ,(struct sockaddr *)&server , sizeof(server)) == SOCKET_ERROR)
+    if(bind(AppSocket, (struct sockaddr*)&server, sizeof(server)) == SOCKET_ERROR)
     {
         printf_colour(TEXT_RED,"Bind failed with error code : %d" , WSAGetLastError());
         exit_app(EXIT_FAILURE);
@@ -149,7 +156,7 @@ int _tmain(int argc, _TCHAR* argv[])
         memset(buf,'\0', 2048);
          
         //try to receive some data, this is a blocking call
-        if ((recv_len = recvfrom(s, (char*)buf, 2048, 0, (struct sockaddr *) &si_other, &slen)) == SOCKET_ERROR)
+        if ((recv_len = recvfrom(AppSocket, (char*)buf, 2048, 0, (struct sockaddr *) &si_other, &slen)) == SOCKET_ERROR)
         {
             printf("recvfrom() failed with error code : %d" , WSAGetLastError());
             exit_app(EXIT_FAILURE);
@@ -260,7 +267,7 @@ int _tmain(int argc, _TCHAR* argv[])
 			int send_len = dnsPacket.Build(reply, sizeof(reply));
 			printf("sending packet to %s:%d (0x%04X)\n", ip_address_str, ntohs(si_other.sin_port),send_len);
 			DisplayPacket(reply,send_len);
-			if (sendto(s, (char*)reply, send_len, 0, (struct sockaddr*) &si_other, slen) == SOCKET_ERROR)
+			if (sendto(AppSocket, (char*)reply, send_len, 0, (struct sockaddr*) &si_other, slen) == SOCKET_ERROR)
 			{
 				printf("sendto() failed with error code : %d" , WSAGetLastError());
 				exit_app(EXIT_FAILURE);
